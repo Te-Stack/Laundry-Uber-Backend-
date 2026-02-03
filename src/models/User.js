@@ -51,6 +51,10 @@ const User = sequelize.define('User', {
   totalRatings: {
     type: DataTypes.INTEGER,
     defaultValue: 0
+  },
+  schedule: {
+    type: DataTypes.JSONB,
+    defaultValue: null
   }
 }, {
   hooks: {
@@ -69,7 +73,7 @@ const User = sequelize.define('User', {
   }
 });
 
-User.prototype.validatePassword = async function(password) {
+User.prototype.validatePassword = async function (password) {
   return await bcrypt.compare(password, this.password);
 };
 

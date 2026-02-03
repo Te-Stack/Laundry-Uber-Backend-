@@ -1,6 +1,6 @@
 # LaundryBer Backend
 
-A backend service for a laundry service application that connects customers with laundry service providers.
+A backend service for a laundry service application that connects customers with laundry service providers in **Nigeria**.
 
 ## Features
 
@@ -10,11 +10,16 @@ A backend service for a laundry service application that connects customers with
 - Laundry request management
 - Real-time messaging
 - Rating and review system
+- **Payment integration (Paystack - Nigeria)**
+- **Services catalog with pricing**
+- **In-app notifications**
+- **Provider schedule management**
 
 ## Prerequisites
 
 - Node.js (v14 or higher)
 - PostgreSQL (v12 or higher)
+- Paystack account (for payments)
 
 ## Setup
 
@@ -29,21 +34,17 @@ cd laundryber-backend
 npm install
 ```
 
-3. Create a PostgreSQL database named `laundryber`
-
-4. Create a `.env` file in the root directory with the following variables:
+3. Create a `.env` file in the root directory with the following variables:
 ```
 PORT=3000
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=laundryber
-DB_USER=postgres
-DB_PASSWORD=your_password
+DATABASE_URL=your_postgresql_connection_string
 JWT_SECRET=your_jwt_secret_key
 NODE_ENV=development
+PAYSTACK_SECRET_KEY=sk_test_xxxx
+PAYSTACK_PUBLIC_KEY=pk_test_xxxx
 ```
 
-5. Start the server:
+4. Start the server:
 ```bash
 # Development mode
 npm run dev
@@ -64,6 +65,9 @@ npm start
 - PATCH `/api/users/location` - Update user location
 - PATCH `/api/users/profile` - Update user profile
 - GET `/api/users/provider/:id` - Get provider profile
+- PATCH `/api/users/availability` - Toggle online/offline (providers)
+- POST `/api/users/schedule` - Set working hours (providers)
+- GET `/api/users/provider/:id/schedule` - Get provider schedule
 
 ### Laundry Requests
 - POST `/api/requests` - Create new request (customers)
@@ -73,6 +77,29 @@ npm start
 - PATCH `/api/requests/:id/decline` - Decline request (providers)
 - PATCH `/api/requests/:id/status` - Update request status
 - PATCH `/api/requests/:id/rate` - Rate and review request
+
+### Payments (Paystack)
+- POST `/api/payments/initialize` - Initialize payment
+- GET `/api/payments/verify/:reference` - Verify payment
+- POST `/api/payments/webhook` - Paystack webhook handler
+- GET `/api/payments/history` - Get payment history
+- GET `/api/payments/:id` - Get single payment
+
+### Services
+- GET `/api/services` - List all services
+- GET `/api/services/:id` - Get service details
+- POST `/api/services` - Add service (providers)
+- PATCH `/api/services/:id` - Update service (providers)
+- DELETE `/api/services/:id` - Remove service (providers)
+- GET `/api/services/provider/my-services` - Get provider's services
+
+### Notifications
+- GET `/api/notifications` - Get user notifications
+- GET `/api/notifications/unread/count` - Get unread count
+- PATCH `/api/notifications/:id/read` - Mark as read
+- PATCH `/api/notifications/read-all` - Mark all as read
+- DELETE `/api/notifications/:id` - Delete notification
+- DELETE `/api/notifications/clear/read` - Clear read notifications
 
 ### Messages
 - GET `/api/messages/conversation/:userId` - Get conversation history
@@ -93,7 +120,8 @@ The application uses Socket.IO for real-time features:
 - JWT-based authentication
 - Password hashing with bcrypt
 - Role-based access control
-- Input validation
+- Paystack webhook signature verification
+- Input validation with Joi
 
 ## Error Handling
 
@@ -103,11 +131,3 @@ The API uses standard HTTP status codes and returns error messages in the follow
   "error": "Error message"
 }
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a new Pull Request 

@@ -27,6 +27,10 @@ const LaundryRequest = sequelize.define('LaundryRequest', {
     type: DataTypes.ENUM('pending', 'accepted', 'declined', 'picked_up', 'washing', 'delivered'),
     defaultValue: 'pending'
   },
+  paymentStatus: {
+    type: DataTypes.ENUM('pending', 'paid', 'refunded'),
+    defaultValue: 'pending'
+  },
   pickupAddress: {
     type: DataTypes.TEXT,
     allowNull: false
