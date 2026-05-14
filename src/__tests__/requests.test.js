@@ -223,6 +223,52 @@ describe('Requests Routes', () => {
             expect(res.statusCode).toBe(200);
             expect(res.body.status).toBe('delivered');
         });
+
+        it('should reject an invalid status value', async () => {
+            const res = await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
+                .send({ status: 'unknown_state' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body).toHaveProperty('error');
+        });
+
+        it('should reject skipping states (accepted -> delivered)', async () => {
+            const res = await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
+                .send({ status: 'delivered' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Cannot transition from 'accepted' to 'delivered'/);
+            expect(res.body.allowedTransitions).toEqual(['picked_up']);
+        });
+
+        it('should reject going back to a previous state', async () => {
+            await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
+                .send({ status: 'picked_up' });
+
+            const res = await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
+                .send({ status: 'accepted' });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Cannot transition from 'picked_up' to 'accepted'/);
+        });
+
+        it('should require a status field', async () => {
+            const res = await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
+                .send({});
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body).toHaveProperty('error');
+        });
     });
 
     describe('PATCH /api/requests/:id/rate', () => {

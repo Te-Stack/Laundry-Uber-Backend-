@@ -101,11 +101,27 @@ io.on('connection', (socket) => {
 
   socket.on('request:update', async (data) => {
     const { requestId, status } = data;
+
+    const validTransitions = {
+      accepted: ['picked_up'],
+      picked_up: ['washing'],
+      washing: ['delivered'],
+    };
+
     const request = await LaundryRequest.findByPk(requestId);
-    if (request) {
-      await request.update({ status });
-      io.emit('request:status', { requestId, status });
+    if (!request) return;
+
+    const allowedNext = validTransitions[request.status];
+    if (!allowedNext || !allowedNext.includes(status)) {
+      socket.emit('request:error', {
+        requestId,
+        error: `Cannot transition from '${request.status}' to '${status}'`
+      });
+      return;
     }
+
+    await request.update({ status });
+    io.emit('request:status', { requestId, status });
   });
 
   socket.on('disconnect', () => {

@@ -24,6 +24,19 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Get provider's own services (must be before /:id to avoid route conflict)
+router.get('/provider/my-services', auth, checkUserType('provider'), async (req, res) => {
+    try {
+        const services = await Service.findAll({
+            where: { providerId: req.user.id },
+            order: [['createdAt', 'DESC']]
+        });
+        res.json(services);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
 // Get single service
 router.get('/:id', async (req, res) => {
     try {
@@ -102,20 +115,6 @@ router.delete('/:id', auth, checkUserType('provider'), async (req, res) => {
 
         await service.destroy();
         res.json({ message: 'Service deleted successfully' });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Get provider's services
-router.get('/provider/my-services', auth, checkUserType('provider'), async (req, res) => {
-    try {
-        const services = await Service.findAll({
-            where: { providerId: req.user.id },
-            order: [['createdAt', 'DESC']]
-        });
-
-        res.json(services);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }

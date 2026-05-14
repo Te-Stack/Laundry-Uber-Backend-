@@ -2,9 +2,23 @@ const express = require('express');
 const { Op } = require('sequelize');
 const LaundryRequest = require('../models/LaundryRequest');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const { auth, checkUserType } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Valid status transitions for the provider workflow (post-acceptance)
+const VALID_TRANSITIONS = {
+  accepted: ['picked_up'],
+  picked_up: ['washing'],
+  washing: ['delivered'],
+};
+
+const STATUS_NOTIFICATION = {
+  picked_up: { title: 'Order Picked Up', message: 'Your laundry has been picked up.' },
+  washing:   { title: 'Washing in Progress', message: 'Your laundry is being washed.' },
+  delivered: { title: 'Order Delivered', message: 'Your laundry has been delivered.' },
+};
 
 // Create new laundry request (customers only)
 router.post('/', auth, checkUserType('customer'), async (req, res) => {
@@ -76,6 +90,24 @@ router.get('/customer', auth, checkUserType('customer'), async (req, res) => {
   }
 });
 
+// Get all pending requests (for providers to browse)
+router.get('/pending', auth, checkUserType('provider'), async (req, res) => {
+  try {
+    const requests = await LaundryRequest.findAll({
+      where: { status: 'pending', providerId: null },
+      include: [{
+        model: User,
+        as: 'customer',
+        attributes: ['id', 'fullName', 'phoneNumber']
+      }],
+      order: [['createdAt', 'DESC']]
+    });
+    res.json(requests);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Accept a request (providers only)
 router.patch('/:id/accept', auth, checkUserType('provider'), async (req, res) => {
   try {
@@ -129,6 +161,11 @@ router.patch('/:id/decline', auth, checkUserType('provider'), async (req, res) =
 router.patch('/:id/status', auth, checkUserType('provider'), async (req, res) => {
   try {
     const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
     const request = await LaundryRequest.findOne({
       where: {
         id: req.params.id,
@@ -140,7 +177,25 @@ router.patch('/:id/status', auth, checkUserType('provider'), async (req, res) =>
       return res.status(404).json({ error: 'Request not found' });
     }
 
+    const allowedNext = VALID_TRANSITIONS[request.status];
+    if (!allowedNext || !allowedNext.includes(status)) {
+      return res.status(400).json({
+        error: `Cannot transition from '${request.status}' to '${status}'`,
+        allowedTransitions: allowedNext || []
+      });
+    }
+
     await request.update({ status });
+
+    const notif = STATUS_NOTIFICATION[status];
+    await Notification.create({
+      userId: request.customerId,
+      title: notif.title,
+      message: notif.message,
+      type: 'order',
+      metadata: { requestId: request.id, status }
+    });
+
     res.json(request);
   } catch (error) {
     res.status(400).json({ error: error.message });
