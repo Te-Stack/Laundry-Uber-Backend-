@@ -289,6 +289,16 @@ describe('Requests Routes', () => {
             await request(app)
                 .patch(`/api/requests/${requestId}/status`)
                 .set('Authorization', `Bearer ${providerToken}`)
+                .send({ status: 'picked_up' });
+
+            await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
+                .send({ status: 'washing' });
+
+            await request(app)
+                .patch(`/api/requests/${requestId}/status`)
+                .set('Authorization', `Bearer ${providerToken}`)
                 .send({ status: 'delivered' });
         });
 

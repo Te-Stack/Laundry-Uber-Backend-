@@ -37,9 +37,11 @@ npm install
 3. Create a `.env` file in the root directory with the following variables:
 ```
 PORT=3000
-DATABASE_URL=your_postgresql_connection_string
-JWT_SECRET=your_jwt_secret_key
 NODE_ENV=development
+DATABASE_URL=your_postgresql_connection_string
+BACKEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5173
+BETTER_AUTH_SECRET=your_better_auth_secret
 PAYSTACK_SECRET_KEY=sk_test_xxxx
 PAYSTACK_PUBLIC_KEY=pk_test_xxxx
 ```
@@ -117,7 +119,7 @@ The application uses Socket.IO for real-time features:
 
 ## Security
 
-- JWT-based authentication
+- Better Auth cookie-based authentication
 - Password hashing with bcrypt
 - Role-based access control
 - Paystack webhook signature verification

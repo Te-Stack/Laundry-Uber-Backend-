@@ -1,13 +1,13 @@
-const express = require('express');
-const { Op } = require('sequelize');
-const Message = require('../models/Message');
-const User = require('../models/User');
-const { auth } = require('../middleware/auth');
+import express from 'express';
+import { Op } from 'sequelize';
+import Message from '../models/Message.js';
+import User from '../models/User.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Get all conversations for the current user
-router.get('/conversations', auth, async (req, res) => {
+router.get('/conversations', requireAuth, async (req, res) => {
   try {
     // Get all messages involving the current user
     const messages = await Message.findAll({
@@ -33,7 +33,7 @@ router.get('/conversations', auth, async (req, res) => {
     const conversations = await Promise.all(
       Array.from(conversationMap.entries()).map(async ([otherUserId, lastMessage]) => {
         const otherUser = await User.findByPk(otherUserId, {
-          attributes: ['id', 'fullName', 'email', 'userType', 'isOnline']
+          attributes: ['id', 'name', 'email', 'userType', 'isOnline']
         });
         const unreadCount = await Message.count({
           where: {
@@ -53,7 +53,7 @@ router.get('/conversations', auth, async (req, res) => {
 });
 
 // Get messages with a specific user
-router.get('/:userId', auth, async (req, res) => {
+router.get('/:userId', requireAuth, async (req, res) => {
   try {
     const messages = await Message.findAll({
       where: {
@@ -63,8 +63,8 @@ router.get('/:userId', auth, async (req, res) => {
         ]
       },
       include: [
-        { model: User, as: 'sender', attributes: ['id', 'fullName', 'userType'] },
-        { model: User, as: 'receiver', attributes: ['id', 'fullName', 'userType'] }
+        { model: User, as: 'sender', attributes: ['id', 'name', 'userType'] },
+        { model: User, as: 'receiver', attributes: ['id', 'name', 'userType'] }
       ],
       order: [['createdAt', 'ASC']]
     });
@@ -88,7 +88,7 @@ router.get('/:userId', auth, async (req, res) => {
 });
 
 // Send a message
-router.post('/', auth, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const { receiverId, content, requestId } = req.body;
 
@@ -105,8 +105,8 @@ router.post('/', auth, async (req, res) => {
 
     const fullMessage = await Message.findByPk(message.id, {
       include: [
-        { model: User, as: 'sender', attributes: ['id', 'fullName', 'userType'] },
-        { model: User, as: 'receiver', attributes: ['id', 'fullName', 'userType'] }
+        { model: User, as: 'sender', attributes: ['id', 'name', 'userType'] },
+        { model: User, as: 'receiver', attributes: ['id', 'name', 'userType'] }
       ]
     });
 
@@ -117,7 +117,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // Get unread message count
-router.get('/unread/count', auth, async (req, res) => {
+router.get('/unread/count', requireAuth, async (req, res) => {
   try {
     const count = await Message.count({
       where: { receiverId: req.user.id, isRead: false }
@@ -128,4 +128,4 @@ router.get('/unread/count', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

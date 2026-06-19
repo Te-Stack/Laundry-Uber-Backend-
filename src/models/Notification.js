@@ -1,5 +1,5 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
 const Notification = sequelize.define('Notification', {
     id: {
@@ -8,12 +8,8 @@ const Notification = sequelize.define('Notification', {
         primaryKey: true
     },
     userId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-            model: 'Users',
-            key: 'id'
-        }
+        type: DataTypes.STRING,
+        allowNull: false
     },
     title: {
         type: DataTypes.STRING,
@@ -37,4 +33,4 @@ const Notification = sequelize.define('Notification', {
     }
 });
 
-module.exports = Notification;
+export default Notification;

@@ -1,6 +1,6 @@
-const express = require('express');
-const Service = require('../models/Service');
-const { auth, checkUserType } = require('../middleware/auth');
+import express from 'express';
+import Service from '../models/Service.js';
+import { requireAuth, checkUserType } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get provider's own services (must be before /:id to avoid route conflict)
-router.get('/provider/my-services', auth, checkUserType('provider'), async (req, res) => {
+router.get('/provider/my-services', requireAuth, checkUserType('provider'), async (req, res) => {
     try {
         const services = await Service.findAll({
             where: { providerId: req.user.id },
@@ -53,7 +53,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new service (providers only)
-router.post('/', auth, checkUserType('provider'), async (req, res) => {
+router.post('/', requireAuth, checkUserType('provider'), async (req, res) => {
     try {
         const { name, description, basePrice, unit, estimatedDuration, category } = req.body;
 
@@ -74,7 +74,7 @@ router.post('/', auth, checkUserType('provider'), async (req, res) => {
 });
 
 // Update service (providers only - their own)
-router.patch('/:id', auth, checkUserType('provider'), async (req, res) => {
+router.patch('/:id', requireAuth, checkUserType('provider'), async (req, res) => {
     try {
         const service = await Service.findOne({
             where: { id: req.params.id, providerId: req.user.id }
@@ -103,7 +103,7 @@ router.patch('/:id', auth, checkUserType('provider'), async (req, res) => {
 });
 
 // Delete service (providers only - their own)
-router.delete('/:id', auth, checkUserType('provider'), async (req, res) => {
+router.delete('/:id', requireAuth, checkUserType('provider'), async (req, res) => {
     try {
         const service = await Service.findOne({
             where: { id: req.params.id, providerId: req.user.id }
@@ -120,4 +120,4 @@ router.delete('/:id', auth, checkUserType('provider'), async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

@@ -1,12 +1,12 @@
-const express = require('express');
-const { Op } = require('sequelize');
-const User = require('../models/User');
-const { auth, checkUserType } = require('../middleware/auth');
+import express from 'express';
+import { Op } from 'sequelize';
+import User from '../models/User.js';
+import { requireAuth, checkUserType } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Get nearby providers
-router.get('/nearby-providers', auth, async (req, res) => {
+router.get('/nearby-providers', requireAuth, async (req, res) => {
   try {
     const { latitude, longitude, radius = 5 } = req.query; // radius in kilometers
 
@@ -32,11 +32,12 @@ router.get('/nearby-providers', auth, async (req, res) => {
 });
 
 // Update user location
-router.patch('/location', auth, async (req, res) => {
+router.patch('/location', requireAuth, async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
 
-    await req.user.update({
+    const user = await User.findByPk(req.user.id);
+    await user.update({
       latitude,
       longitude
     });
@@ -48,23 +49,24 @@ router.patch('/location', auth, async (req, res) => {
 });
 
 // Update user profile
-router.patch('/profile', auth, async (req, res) => {
+router.patch('/profile', requireAuth, async (req, res) => {
   try {
     const { fullName, phoneNumber } = req.body;
 
-    await req.user.update({
-      fullName,
+    const user = await User.findByPk(req.user.id);
+    await user.update({
+      name: fullName,
       phoneNumber
     });
 
     res.json({
       message: 'Profile updated successfully',
       user: {
-        id: req.user.id,
-        email: req.user.email,
-        fullName: req.user.fullName,
-        phoneNumber: req.user.phoneNumber,
-        userType: req.user.userType
+        id: user.id,
+        email: user.email,
+        fullName: user.name,
+        phoneNumber: user.phoneNumber,
+        userType: user.userType
       }
     });
   } catch (error) {
@@ -73,7 +75,7 @@ router.patch('/profile', auth, async (req, res) => {
 });
 
 // Get provider profile (for customers)
-router.get('/provider/:id', auth, checkUserType('customer'), async (req, res) => {
+router.get('/provider/:id', requireAuth, checkUserType('customer'), async (req, res) => {
   try {
     const provider = await User.findOne({
       where: {
@@ -94,11 +96,12 @@ router.get('/provider/:id', auth, checkUserType('customer'), async (req, res) =>
 });
 
 // Toggle provider availability (online/offline)
-router.patch('/availability', auth, checkUserType('provider'), async (req, res) => {
+router.patch('/availability', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const { isOnline } = req.body;
 
-    await req.user.update({ isOnline });
+    const user = await User.findByPk(req.user.id);
+    await user.update({ isOnline });
 
     res.json({
       message: `You are now ${isOnline ? 'online' : 'offline'}`,
@@ -110,12 +113,13 @@ router.patch('/availability', auth, checkUserType('provider'), async (req, res) 
 });
 
 // Set provider working hours/schedule
-router.post('/schedule', auth, checkUserType('provider'), async (req, res) => {
+router.post('/schedule', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const { schedule } = req.body;
     // schedule format: { monday: { start: "09:00", end: "18:00" }, ... }
 
-    await req.user.update({ schedule });
+    const user = await User.findByPk(req.user.id);
+    await user.update({ schedule: JSON.stringify(schedule) });
 
     res.json({
       message: 'Schedule updated successfully',
@@ -127,14 +131,14 @@ router.post('/schedule', auth, checkUserType('provider'), async (req, res) => {
 });
 
 // Get provider schedule
-router.get('/provider/:id/schedule', auth, async (req, res) => {
+router.get('/provider/:id/schedule', requireAuth, async (req, res) => {
   try {
     const provider = await User.findOne({
       where: {
         id: req.params.id,
         userType: 'provider'
       },
-      attributes: ['id', 'fullName', 'schedule', 'isOnline']
+      attributes: ['id', 'name', 'schedule', 'isOnline']
     });
 
     if (!provider) {
@@ -147,4 +151,4 @@ router.get('/provider/:id/schedule', auth, async (req, res) => {
   }
 });
 
-module.exports = router; 
+export default router;

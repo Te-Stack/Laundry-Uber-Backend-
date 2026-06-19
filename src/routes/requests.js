@@ -1,27 +1,31 @@
-const express = require('express');
-const { Op } = require('sequelize');
-const LaundryRequest = require('../models/LaundryRequest');
-const User = require('../models/User');
-const Notification = require('../models/Notification');
-const { auth, checkUserType } = require('../middleware/auth');
+import express from 'express';
+import { Op } from 'sequelize';
+import LaundryRequest from '../models/LaundryRequest.js';
+import User from '../models/User.js';
+import Notification from '../models/Notification.js';
+import { requireAuth, checkUserType } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Valid status transitions for the provider workflow (post-acceptance)
 const VALID_TRANSITIONS = {
-  accepted: ['picked_up'],
-  picked_up: ['washing'],
-  washing: ['delivered'],
+  accepted:        ['picked_up'],
+  picked_up:       ['washing'],
+  washing:         ['ready'],
+  ready:           ['out_for_delivery'],
+  out_for_delivery: ['delivered'],
 };
 
 const STATUS_NOTIFICATION = {
-  picked_up: { title: 'Order Picked Up', message: 'Your laundry has been picked up.' },
-  washing:   { title: 'Washing in Progress', message: 'Your laundry is being washed.' },
-  delivered: { title: 'Order Delivered', message: 'Your laundry has been delivered.' },
+  picked_up:        { title: 'Order Picked Up',       message: 'Your laundry has been picked up.' },
+  washing:          { title: 'Washing in Progress',   message: 'Your laundry is being washed.' },
+  ready:            { title: 'Order Ready',           message: 'Your laundry is ready for delivery.' },
+  out_for_delivery: { title: 'Out for Delivery',      message: 'Your laundry is on its way.' },
+  delivered:        { title: 'Order Delivered',       message: 'Your laundry has been delivered.' },
 };
 
 // Create new laundry request (customers only)
-router.post('/', auth, checkUserType('customer'), async (req, res) => {
+router.post('/', requireAuth, checkUserType('customer'), async (req, res) => {
   try {
     const {
       pickupAddress,
@@ -49,7 +53,7 @@ router.post('/', auth, checkUserType('customer'), async (req, res) => {
 });
 
 // Get all requests for a provider
-router.get('/provider', auth, checkUserType('provider'), async (req, res) => {
+router.get('/provider', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const requests = await LaundryRequest.findAll({
       where: {
@@ -58,7 +62,7 @@ router.get('/provider', auth, checkUserType('provider'), async (req, res) => {
       include: [{
         model: User,
         as: 'customer',
-        attributes: ['id', 'fullName', 'phoneNumber']
+        attributes: ['id', 'name', 'phoneNumber']
       }],
       order: [['createdAt', 'DESC']]
     });
@@ -70,7 +74,7 @@ router.get('/provider', auth, checkUserType('provider'), async (req, res) => {
 });
 
 // Get all requests for a customer
-router.get('/customer', auth, checkUserType('customer'), async (req, res) => {
+router.get('/customer', requireAuth, checkUserType('customer'), async (req, res) => {
   try {
     const requests = await LaundryRequest.findAll({
       where: {
@@ -79,7 +83,7 @@ router.get('/customer', auth, checkUserType('customer'), async (req, res) => {
       include: [{
         model: User,
         as: 'provider',
-        attributes: ['id', 'fullName', 'phoneNumber']
+        attributes: ['id', 'name', 'phoneNumber']
       }],
       order: [['createdAt', 'DESC']]
     });
@@ -91,14 +95,14 @@ router.get('/customer', auth, checkUserType('customer'), async (req, res) => {
 });
 
 // Get all pending requests (for providers to browse)
-router.get('/pending', auth, checkUserType('provider'), async (req, res) => {
+router.get('/pending', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const requests = await LaundryRequest.findAll({
       where: { status: 'pending', providerId: null },
       include: [{
         model: User,
         as: 'customer',
-        attributes: ['id', 'fullName', 'phoneNumber']
+        attributes: ['id', 'name', 'phoneNumber']
       }],
       order: [['createdAt', 'DESC']]
     });
@@ -109,7 +113,7 @@ router.get('/pending', auth, checkUserType('provider'), async (req, res) => {
 });
 
 // Accept a request (providers only)
-router.patch('/:id/accept', auth, checkUserType('provider'), async (req, res) => {
+router.patch('/:id/accept', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const request = await LaundryRequest.findOne({
       where: {
@@ -134,7 +138,7 @@ router.patch('/:id/accept', auth, checkUserType('provider'), async (req, res) =>
 });
 
 // Decline a request (providers only)
-router.patch('/:id/decline', auth, checkUserType('provider'), async (req, res) => {
+router.patch('/:id/decline', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const request = await LaundryRequest.findOne({
       where: {
@@ -158,7 +162,7 @@ router.patch('/:id/decline', auth, checkUserType('provider'), async (req, res) =
 });
 
 // Update request status (providers only)
-router.patch('/:id/status', auth, checkUserType('provider'), async (req, res) => {
+router.patch('/:id/status', requireAuth, checkUserType('provider'), async (req, res) => {
   try {
     const { status } = req.body;
 
@@ -203,7 +207,7 @@ router.patch('/:id/status', auth, checkUserType('provider'), async (req, res) =>
 });
 
 // Rate and review a request (customers only)
-router.patch('/:id/rate', auth, checkUserType('customer'), async (req, res) => {
+router.patch('/:id/rate', requireAuth, checkUserType('customer'), async (req, res) => {
   try {
     const { rating, review } = req.body;
     const request = await LaundryRequest.findOne({
@@ -230,7 +234,7 @@ router.patch('/:id/rate', auth, checkUserType('customer'), async (req, res) => {
     });
 
     const newTotalRatings = providerRequests.length;
-    const newAverageRating = providerRequests.reduce((acc, req) => acc + req.rating, 0) / newTotalRatings;
+    const newAverageRating = providerRequests.reduce((acc, r) => acc + r.rating, 0) / newTotalRatings;
 
     await provider.update({
       rating: newAverageRating,
@@ -243,4 +247,4 @@ router.patch('/:id/rate', auth, checkUserType('customer'), async (req, res) => {
   }
 });
 
-module.exports = router; 
+export default router;

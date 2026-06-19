@@ -1,5 +1,5 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
 const LaundryRequest = sequelize.define('LaundryRequest', {
   id: {
@@ -8,27 +8,19 @@ const LaundryRequest = sequelize.define('LaundryRequest', {
     primaryKey: true
   },
   customerId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: DataTypes.STRING,
+    allowNull: false
   },
   providerId: {
-    type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: DataTypes.STRING,
+    allowNull: true
   },
   status: {
-    type: DataTypes.ENUM('pending', 'accepted', 'declined', 'picked_up', 'washing', 'delivered'),
+    type: DataTypes.ENUM('pending', 'accepted', 'declined', 'picked_up', 'washing', 'ready', 'out_for_delivery', 'delivered'),
     defaultValue: 'pending'
   },
   paymentStatus: {
-    type: DataTypes.ENUM('pending', 'paid', 'refunded'),
+    type: DataTypes.ENUM('pending', 'paid', 'failed', 'refunded'),
     defaultValue: 'pending'
   },
   pickupAddress: {
@@ -74,4 +66,4 @@ const LaundryRequest = sequelize.define('LaundryRequest', {
   }
 });
 
-module.exports = LaundryRequest; 
+export default LaundryRequest;

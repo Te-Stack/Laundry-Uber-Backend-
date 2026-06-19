@@ -1,30 +1,33 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import { fromNodeHeaders } from "better-auth/node";
+import { auth } from "../config/auth.js";
 
-const auth = async (req, res, next) => {
+/**
+ * Middleware that validates the session via Better Auth.
+ * Attaches session.user to req.user and session to req.session.
+ */
+export const requireAuth = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
-      throw new Error();
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    if (!session) {
+      return res.status(401).json({ error: "Please authenticate." });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findOne({ where: { id: decoded.id } });
-
-    if (!user) {
-      throw new Error();
-    }
-
-    req.token = token;
-    req.user = user;
+    req.user = session.user;
+    req.session = session.session;
     next();
   } catch (error) {
-    res.status(401).json({ error: 'Please authenticate.' });
+    return res.status(401).json({ error: "Please authenticate." });
   }
 };
 
-const checkUserType = (userType) => {
+/**
+ * Middleware factory that checks if the authenticated user has a specific userType.
+ * Must be used after requireAuth.
+ */
+export const checkUserType = (userType) => {
   return (req, res, next) => {
     if (req.user.userType !== userType) {
       return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
@@ -32,8 +35,3 @@ const checkUserType = (userType) => {
     next();
   };
 };
-
-module.exports = {
-  auth,
-  checkUserType
-}; 

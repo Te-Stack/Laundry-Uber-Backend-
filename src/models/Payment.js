@@ -1,5 +1,5 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
 const Payment = sequelize.define('Payment', {
   id: {
@@ -9,19 +9,11 @@ const Payment = sequelize.define('Payment', {
   },
   requestId: {
     type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'LaundryRequests',
-      key: 'id'
-    }
+    allowNull: false
   },
   userId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: DataTypes.STRING,
+    allowNull: false
   },
   amount: {
     type: DataTypes.DECIMAL(10, 2),
@@ -58,4 +50,4 @@ const Payment = sequelize.define('Payment', {
   }
 });
 
-module.exports = Payment;
+export default Payment;

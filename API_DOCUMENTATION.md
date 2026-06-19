@@ -1,7 +1,7 @@
 # LaundryBer API Documentation
 
-> **Base URL**: `http://localhost:3000/api`  
-> **WebSocket URL**: `ws://localhost:3000`
+> **Base URL**: `${VITE_BACKEND_URL}/api`
+> **WebSocket URL**: `${VITE_BACKEND_URL}`
 
 ## Table of Contents
 
@@ -18,11 +18,7 @@
 
 ## Authentication
 
-All protected endpoints require a JWT token in the Authorization header:
-
-```
-Authorization: Bearer <your_jwt_token>
-```
+Protected endpoints use the Better Auth session cookie. Frontends should send credentialed requests so the browser includes the cookie automatically.
 
 ### Register User
 
@@ -778,10 +774,8 @@ POST /api/messages
 ```javascript
 import { io } from 'socket.io-client';
 
-const socket = io('http://localhost:3000', {
-  auth: {
-    token: 'your_jwt_token'
-  }
+const socket = io(import.meta.env.VITE_BACKEND_URL, {
+  withCredentials: true
 });
 ```
 
@@ -808,8 +802,8 @@ const socket = io('http://localhost:3000', {
 
 ```javascript
 // Connect
-const socket = io('http://localhost:3000', {
-  auth: { token: localStorage.getItem('token') }
+const socket = io(import.meta.env.VITE_BACKEND_URL, {
+  withCredentials: true
 });
 
 // Join request room for updates
@@ -817,12 +811,12 @@ socket.emit('joinRoom', { requestId: 'request-uuid' });
 
 // Listen for status updates
 socket.on('requestStatusUpdate', (data) => {
-  console.log('Request updated:', data.request.status);
+  updateRequestStatus(data.request.status);
 });
 
 // Listen for new messages
 socket.on('newMessage', (data) => {
-  console.log('New message:', data.message.content);
+  appendMessage(data.message);
 });
 
 // Listen for notifications
@@ -862,8 +856,8 @@ All errors follow this format:
 
 ## Frontend Integration Checklist
 
-- [ ] Store JWT token in secure storage (localStorage/AsyncStorage)
-- [ ] Include token in all authenticated requests
+- [ ] Configure Better Auth cookie sessions
+- [ ] Send credentials with all authenticated requests
 - [ ] Handle 401 errors (redirect to login)
 - [ ] Implement Socket.IO for real-time updates
 - [ ] Handle Paystack payment redirect flow
@@ -876,8 +870,7 @@ All errors follow this format:
 ## Environment Variables (For Development)
 
 ```env
-API_BASE_URL=http://localhost:3000/api
-SOCKET_URL=ws://localhost:3000
+VITE_BACKEND_URL=http://localhost:3000
 PAYSTACK_PUBLIC_KEY=pk_test_xxxx
 ```
 
@@ -889,19 +882,11 @@ PAYSTACK_PUBLIC_KEY=pk_test_xxxx
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL: `${import.meta.env.VITE_BACKEND_URL}/api`,
   headers: {
     'Content-Type': 'application/json'
-  }
-});
-
-// Add token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  },
+  withCredentials: true
 });
 
 // Handle 401 errors
@@ -909,7 +894,6 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
       window.location.href = '/login';
     }
     return Promise.reject(error);

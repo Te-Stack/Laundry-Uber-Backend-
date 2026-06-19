@@ -1,5 +1,5 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
 const Service = sequelize.define('Service', {
     id: {
@@ -37,13 +37,9 @@ const Service = sequelize.define('Service', {
         defaultValue: true
     },
     providerId: {
-        type: DataTypes.UUID,
-        allowNull: true, // null means it's a default service
-        references: {
-            model: 'Users',
-            key: 'id'
-        }
+        type: DataTypes.STRING,
+        allowNull: true
     }
 });
 
-module.exports = Service;
+export default Service;

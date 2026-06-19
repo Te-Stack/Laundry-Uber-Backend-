@@ -1,12 +1,17 @@
-const { DataTypes } = require('sequelize');
-const bcrypt = require('bcryptjs');
-const sequelize = require('../config/database');
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const User = sequelize.define('User', {
+// Sequelize model for querying the Better Auth 'user' table.
+// Better Auth manages user creation and password hashing.
+// This model is used by other routes (requests, messages, etc.) to query user data.
+const User = sequelize.define('user', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.STRING,
     primaryKey: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
   email: {
     type: DataTypes.STRING,
@@ -16,21 +21,22 @@ const User = sequelize.define('User', {
       isEmail: true
     }
   },
-  password: {
-    type: DataTypes.STRING,
-    allowNull: false
+  emailVerified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
-  fullName: {
+  image: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
   phoneNumber: {
     type: DataTypes.STRING,
-    allowNull: false
+    allowNull: true
   },
   userType: {
-    type: DataTypes.ENUM('customer', 'provider'),
-    allowNull: false
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'customer'
   },
   isOnline: {
     type: DataTypes.BOOLEAN,
@@ -53,28 +59,14 @@ const User = sequelize.define('User', {
     defaultValue: 0
   },
   schedule: {
-    type: DataTypes.JSONB,
+    type: DataTypes.TEXT,
     defaultValue: null
   }
 }, {
-  hooks: {
-    beforeCreate: async (user) => {
-      if (user.password) {
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(user.password, salt);
-      }
-    },
-    beforeUpdate: async (user) => {
-      if (user.changed('password')) {
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(user.password, salt);
-      }
-    }
-  }
+  tableName: 'user',
+  timestamps: true,
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
 });
 
-User.prototype.validatePassword = async function (password) {
-  return await bcrypt.compare(password, this.password);
-};
-
-module.exports = User; 
+export default User;

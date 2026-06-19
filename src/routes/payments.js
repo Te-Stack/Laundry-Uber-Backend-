@@ -1,18 +1,22 @@
-const express = require('express');
-const crypto = require('crypto');
-const axios = require('axios');
-const Payment = require('../models/Payment');
-const LaundryRequest = require('../models/LaundryRequest');
-const Notification = require('../models/Notification');
-const { auth } = require('../middleware/auth');
+import express from 'express';
+import crypto from 'crypto';
+import axios from 'axios';
+import Payment from '../models/Payment.js';
+import LaundryRequest from '../models/LaundryRequest.js';
+import Notification from '../models/Notification.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
+if (process.env.NODE_ENV === 'production' && !PAYSTACK_SECRET_KEY) {
+    throw new Error('PAYSTACK_SECRET_KEY must be set in production.');
+}
+
 // Initialize payment
-router.post('/initialize', auth, async (req, res) => {
+router.post('/initialize', requireAuth, async (req, res) => {
     try {
         const { requestId, amount, email, callbackUrl } = req.body;
 
@@ -75,7 +79,7 @@ router.post('/initialize', auth, async (req, res) => {
 });
 
 // Verify payment
-router.get('/verify/:reference', auth, async (req, res) => {
+router.get('/verify/:reference', requireAuth, async (req, res) => {
     try {
         const { reference } = req.params;
 
@@ -194,7 +198,7 @@ router.post('/webhook', async (req, res) => {
 });
 
 // Get payment history
-router.get('/history', auth, async (req, res) => {
+router.get('/history', requireAuth, async (req, res) => {
     try {
         const payments = await Payment.findAll({
             where: { userId: req.user.id },
@@ -213,7 +217,7 @@ router.get('/history', auth, async (req, res) => {
 });
 
 // Get single payment
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
     try {
         const payment = await Payment.findOne({
             where: { id: req.params.id, userId: req.user.id }
@@ -229,4 +233,4 @@ router.get('/:id', auth, async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

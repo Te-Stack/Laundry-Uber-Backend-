@@ -1,4 +1,8 @@
-const { Sequelize } = require('sequelize');
+import { Sequelize } from 'sequelize';
+
+if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL must be set in production.');
+}
 
 const sequelize = new Sequelize(
   process.env.DATABASE_URL ||
@@ -9,7 +13,7 @@ const sequelize = new Sequelize(
       database: process.env.DB_NAME || 'laundryber',
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'postgres',
-      logging: process.env.NODE_ENV === 'development' ? console.log : false,
+      logging: process.env.NODE_ENV === 'development' ? console.info : false,
       pool: {
         max: 5,
         min: 0,
@@ -29,4 +33,4 @@ const sequelize = new Sequelize(
   }
 );
 
-module.exports = sequelize; 
+export default sequelize;

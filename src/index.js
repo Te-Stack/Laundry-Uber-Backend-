@@ -1,42 +1,62 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const http = require('http');
-const socketIo = require('socket.io');
-const sequelize = require('./config/database');
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import http from 'http';
+import { Server } from 'socket.io';
+import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
+import { auth } from './config/auth.js';
+import sequelize from './config/database.js';
 
 // Import models
-const User = require('./models/User');
-const LaundryRequest = require('./models/LaundryRequest');
-const Message = require('./models/Message');
-const Payment = require('./models/Payment');
-const Service = require('./models/Service');
-const Notification = require('./models/Notification');
+import User from './models/User.js';
+import LaundryRequest from './models/LaundryRequest.js';
+import Message from './models/Message.js';
+import Payment from './models/Payment.js';
+import Service from './models/Service.js';
+import Notification from './models/Notification.js';
 
 // Import routes
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const requestRoutes = require('./routes/requests');
-const messageRoutes = require('./routes/messages');
-const paymentRoutes = require('./routes/payments');
-const serviceRoutes = require('./routes/services');
-const notificationRoutes = require('./routes/notifications');
+import userRoutes from './routes/users.js';
+import requestRoutes from './routes/requests.js';
+import messageRoutes from './routes/messages.js';
+import paymentRoutes from './routes/payments.js';
+import serviceRoutes from './routes/services.js';
+import notificationRoutes from './routes/notifications.js';
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+const isProduction = process.env.NODE_ENV === 'production';
+const PORT = process.env.PORT || 3000;
+const frontendOrigins = (
+  process.env.FRONTEND_URL || (isProduction ? '' : 'http://localhost:5173')
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+if (isProduction && frontendOrigins.length === 0) {
+  throw new Error('FRONTEND_URL must be set in production.');
+}
+
+const corsOptions = {
+  origin: frontendOrigins,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  credentials: true,
+};
+const io = new Server(server, {
+  cors: corsOptions
 });
 
-// Middleware
-app.use(cors());
+// CORS — hardened for cookie-based auth
+app.use(cors(corsOptions));
+
+// Better Auth handler — MUST be mounted BEFORE express.json()
+app.all("/api/auth/*", toNodeHandler(auth));
+
+// JSON body parser — for all other routes
 app.use(express.json());
 
 // Routes
-app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/messages', messageRoutes);
@@ -69,29 +89,40 @@ Message.belongsTo(User, { as: 'receiver', foreignKey: 'receiverId' });
 // Socket.IO connection handling
 const connectedUsers = new Map();
 
-io.on('connection', (socket) => {
-  console.log('New client connected');
+// Authenticate every socket connection via the Better Auth session cookie.
+// Rejects the handshake if no valid session is found.
+io.use(async (socket, next) => {
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(socket.request.headers),
+    });
+    if (!session) {
+      return next(new Error('Authentication required'));
+    }
+    socket.data.user = session.user;
+    next();
+  } catch {
+    next(new Error('Authentication required'));
+  }
+});
 
-  socket.on('user:connect', async (userId) => {
-    connectedUsers.set(userId, socket.id);
-    await User.update({ isOnline: true }, { where: { id: userId } });
-    io.emit('user:status', { userId, isOnline: true });
-  });
+io.on('connection', async (socket) => {
+  // Identity comes from the verified session, never from the client payload.
+  const userId = socket.data.user.id;
 
-  socket.on('user:disconnect', async (userId) => {
-    connectedUsers.delete(userId);
-    await User.update({ isOnline: false }, { where: { id: userId } });
-    io.emit('user:status', { userId, isOnline: false });
-  });
+  connectedUsers.set(userId, socket.id);
+  await User.update({ isOnline: true }, { where: { id: userId } });
+  io.emit('user:status', { userId, isOnline: true });
+
+  if (!isProduction) {
+    console.info(`User ${userId} connected`);
+  }
 
   socket.on('message:send', async (data) => {
-    const { senderId, receiverId, content, requestId } = data;
-    const message = await Message.create({
-      senderId,
-      receiverId,
-      content,
-      requestId
-    });
+    const { receiverId, content, requestId } = data;
+    // senderId is taken from the verified session, not from the client payload.
+    const senderId = socket.data.user.id;
+    const message = await Message.create({ senderId, receiverId, content, requestId });
 
     const receiverSocketId = connectedUsers.get(receiverId);
     if (receiverSocketId) {
@@ -103,13 +134,21 @@ io.on('connection', (socket) => {
     const { requestId, status } = data;
 
     const validTransitions = {
-      accepted: ['picked_up'],
-      picked_up: ['washing'],
-      washing: ['delivered'],
+      accepted:        ['picked_up'],
+      picked_up:       ['washing'],
+      washing:         ['ready'],
+      ready:           ['out_for_delivery'],
+      out_for_delivery: ['delivered'],
     };
 
     const request = await LaundryRequest.findByPk(requestId);
     if (!request) return;
+
+    // Only the assigned provider may advance the status.
+    if (request.providerId !== userId) {
+      socket.emit('request:error', { requestId, error: 'Access denied.' });
+      return;
+    }
 
     const allowedNext = validTransitions[request.status];
     if (!allowedNext || !allowedNext.includes(status)) {
@@ -121,32 +160,37 @@ io.on('connection', (socket) => {
     }
 
     await request.update({ status });
-    io.emit('request:status', { requestId, status });
+    // Emit the full updated request so the frontend can update its cache directly.
+    // Event name matches the frontend 'requestStatusUpdate' listener in useRequestRealtime.ts.
+    io.emit('requestStatusUpdate', { request });
   });
 
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
+  socket.on('disconnect', async () => {
+    connectedUsers.delete(userId);
+    await User.update({ isOnline: false }, { where: { id: userId } });
+    io.emit('user:status', { userId, isOnline: false });
+    if (!isProduction) {
+      console.info(`User ${userId} disconnected`);
+    }
   });
 });
 
 // Database sync and server start
-const PORT = process.env.PORT || 3000;
-
 async function startServer() {
   try {
     await sequelize.authenticate();
-    console.log('Database connection established successfully.');
+    console.info('Database connection established successfully.');
 
-    // Sync all models
-    await sequelize.sync({ alter: true });
-    console.log('Database models synchronized.');
+    // Sync Sequelize models (non-auth tables only — Better Auth manages its own tables)
+    await sequelize.sync(isProduction ? {} : { alter: true });
+    console.info('Database models synchronized.');
 
     server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+      console.info(`Server is running on port ${PORT}`);
     });
   } catch (error) {
     console.error('Unable to start server:', error);
   }
 }
 
-startServer(); 
+startServer();

@@ -1,5 +1,5 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
 const Message = sequelize.define('Message', {
   id: {
@@ -8,28 +8,16 @@ const Message = sequelize.define('Message', {
     primaryKey: true
   },
   senderId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: DataTypes.STRING,
+    allowNull: false
   },
   receiverId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: DataTypes.STRING,
+    allowNull: false
   },
   requestId: {
     type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'LaundryRequests',
-      key: 'id'
-    }
+    allowNull: true
   },
   content: {
     type: DataTypes.TEXT,
@@ -41,4 +29,4 @@ const Message = sequelize.define('Message', {
   }
 });
 
-module.exports = Message; 
+export default Message;

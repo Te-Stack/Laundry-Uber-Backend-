@@ -1,12 +1,12 @@
-const express = require('express');
-const { Op } = require('sequelize');
-const Notification = require('../models/Notification');
-const { auth } = require('../middleware/auth');
+import express from 'express';
+import { Op } from 'sequelize';
+import Notification from '../models/Notification.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Get user's notifications
-router.get('/', auth, async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
     try {
         const { unreadOnly, type, limit = 50 } = req.query;
 
@@ -27,7 +27,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // Get unread count
-router.get('/unread/count', auth, async (req, res) => {
+router.get('/unread/count', requireAuth, async (req, res) => {
     try {
         const count = await Notification.count({
             where: { userId: req.user.id, isRead: false }
@@ -40,7 +40,7 @@ router.get('/unread/count', auth, async (req, res) => {
 });
 
 // Mark notification as read
-router.patch('/:id/read', auth, async (req, res) => {
+router.patch('/:id/read', requireAuth, async (req, res) => {
     try {
         const notification = await Notification.findOne({
             where: { id: req.params.id, userId: req.user.id }
@@ -58,7 +58,7 @@ router.patch('/:id/read', auth, async (req, res) => {
 });
 
 // Mark all notifications as read
-router.patch('/read-all', auth, async (req, res) => {
+router.patch('/read-all', requireAuth, async (req, res) => {
     try {
         await Notification.update(
             { isRead: true },
@@ -72,7 +72,7 @@ router.patch('/read-all', auth, async (req, res) => {
 });
 
 // Delete notification
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
     try {
         const notification = await Notification.findOne({
             where: { id: req.params.id, userId: req.user.id }
@@ -90,7 +90,7 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // Delete all read notifications
-router.delete('/clear/read', auth, async (req, res) => {
+router.delete('/clear/read', requireAuth, async (req, res) => {
     try {
         await Notification.destroy({
             where: { userId: req.user.id, isRead: true }
@@ -102,4 +102,4 @@ router.delete('/clear/read', auth, async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;
