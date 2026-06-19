@@ -5,6 +5,8 @@ import Payment from '../models/Payment.js';
 import LaundryRequest from '../models/LaundryRequest.js';
 import Notification from '../models/Notification.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { initializePaymentSchema } from '../validators/paymentSchemas.js';
 
 const router = express.Router();
 
@@ -12,225 +14,203 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
 if (process.env.NODE_ENV === 'production' && !PAYSTACK_SECRET_KEY) {
-    throw new Error('PAYSTACK_SECRET_KEY must be set in production.');
+  throw new Error('PAYSTACK_SECRET_KEY must be set in production.');
 }
 
-// Initialize payment
-router.post('/initialize', requireAuth, async (req, res) => {
-    try {
-        const { requestId, amount, email, callbackUrl } = req.body;
+// ─── Shared helper ────────────────────────────────────────────────────────────
 
-        // Verify the laundry request exists
-        const laundryRequest = await LaundryRequest.findOne({
-            where: { id: requestId, customerId: req.user.id }
-        });
+/**
+ * Handles a confirmed successful Paystack payment.
+ * Shared between the /verify endpoint and the webhook handler to avoid duplication.
+ *
+ * @param {object} payment      - Payment Sequelize instance
+ * @param {object} paystackData - Data object from the Paystack API response
+ */
+async function handlePaymentSuccess(payment, paystackData) {
+  await payment.update({
+    status: 'success',
+    paystackReference: paystackData.reference,
+    paymentMethod: paystackData.channel,
+    paidAt: new Date(paystackData.paid_at),
+    metadata: paystackData,
+  });
 
-        if (!laundryRequest) {
-            return res.status(404).json({ error: 'Laundry request not found' });
-        }
+  await LaundryRequest.update(
+    { paymentStatus: 'paid' },
+    { where: { id: payment.requestId } }
+  );
 
-        // Generate unique reference
-        const reference = `LB_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  await Notification.create({
+    userId: payment.userId,
+    title: 'Payment Successful',
+    message: `Your payment of ₦${payment.amount} was successful.`,
+    type: 'payment',
+    metadata: { paymentId: payment.id },
+  });
+}
 
-        // Create payment record
-        const payment = await Payment.create({
-            requestId,
-            userId: req.user.id,
-            amount,
-            reference,
-            status: 'pending'
-        });
+// ─── Initialize payment ───────────────────────────────────────────────────────
 
-        // Initialize Paystack transaction
-        const response = await axios.post(
-            `${PAYSTACK_BASE_URL}/transaction/initialize`,
-            {
-                email,
-                amount: amount * 100, // Paystack expects amount in kobo
-                reference,
-                callback_url: callbackUrl,
-                metadata: {
-                    requestId,
-                    paymentId: payment.id
-                }
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
+router.post('/initialize', requireAuth, validate(initializePaymentSchema), async (req, res, next) => {
+  try {
+    const { requestId, amount, email, callbackUrl } = req.body;
 
-        res.json({
-            status: 'success',
-            message: 'Payment initialized',
-            data: {
-                paymentId: payment.id,
-                reference,
-                authorizationUrl: response.data.data.authorization_url,
-                accessCode: response.data.data.access_code
-            }
-        });
-    } catch (error) {
-        console.error('Payment initialization error:', error.response?.data || error.message);
-        res.status(400).json({ error: 'Failed to initialize payment' });
+    // Verify the laundry request belongs to this customer
+    const laundryRequest = await LaundryRequest.findOne({
+      where: { id: requestId, customerId: req.user.id },
+    });
+
+    if (!laundryRequest) {
+      return res.status(404).json({ error: 'Laundry request not found' });
     }
+
+    const reference = `LB_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+    const payment = await Payment.create({
+      requestId,
+      userId: req.user.id,
+      amount,
+      reference,
+      status: 'pending',
+    });
+
+    const response = await axios.post(
+      `${PAYSTACK_BASE_URL}/transaction/initialize`,
+      {
+        email,
+        amount: amount * 100, // Paystack expects amount in kobo
+        reference,
+        callback_url: callbackUrl,
+        metadata: { requestId, paymentId: payment.id },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    res.json({
+      status: 'success',
+      message: 'Payment initialized',
+      data: {
+        paymentId: payment.id,
+        reference,
+        authorizationUrl: response.data.data.authorization_url,
+        accessCode: response.data.data.access_code,
+      },
+    });
+  } catch (error) {
+    console.error('Payment initialization error:', error.response?.data || error.message);
+    next(error);
+  }
 });
 
-// Verify payment
-router.get('/verify/:reference', requireAuth, async (req, res) => {
-    try {
-        const { reference } = req.params;
+// ─── Verify payment ───────────────────────────────────────────────────────────
 
-        const payment = await Payment.findOne({ where: { reference } });
-        if (!payment) {
-            return res.status(404).json({ error: 'Payment not found' });
-        }
+router.get('/verify/:reference', requireAuth, async (req, res, next) => {
+  try {
+    const { reference } = req.params;
 
-        // Verify with Paystack
-        const response = await axios.get(
-            `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
-                }
-            }
-        );
-
-        const paystackData = response.data.data;
-
-        if (paystackData.status === 'success') {
-            await payment.update({
-                status: 'success',
-                paystackReference: paystackData.reference,
-                paymentMethod: paystackData.channel,
-                paidAt: new Date(paystackData.paid_at),
-                metadata: paystackData
-            });
-
-            // Update laundry request payment status
-            await LaundryRequest.update(
-                { paymentStatus: 'paid' },
-                { where: { id: payment.requestId } }
-            );
-
-            // Create notification
-            await Notification.create({
-                userId: payment.userId,
-                title: 'Payment Successful',
-                message: `Your payment of ₦${payment.amount} was successful.`,
-                type: 'payment',
-                metadata: { paymentId: payment.id }
-            });
-        } else {
-            await payment.update({
-                status: 'failed',
-                metadata: paystackData
-            });
-        }
-
-        res.json({
-            status: 'success',
-            data: {
-                paymentStatus: payment.status,
-                amount: payment.amount,
-                reference: payment.reference
-            }
-        });
-    } catch (error) {
-        console.error('Payment verification error:', error.response?.data || error.message);
-        res.status(400).json({ error: 'Failed to verify payment' });
+    const payment = await Payment.findOne({ where: { reference } });
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
     }
+
+    const response = await axios.get(
+      `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
+      { headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` } }
+    );
+
+    const paystackData = response.data.data;
+
+    if (paystackData.status === 'success') {
+      await handlePaymentSuccess(payment, paystackData);
+    } else {
+      await payment.update({ status: 'failed', metadata: paystackData });
+    }
+
+    res.json({
+      status: 'success',
+      data: {
+        paymentStatus: payment.status,
+        amount: payment.amount,
+        reference: payment.reference,
+      },
+    });
+  } catch (error) {
+    console.error('Payment verification error:', error.response?.data || error.message);
+    next(error);
+  }
 });
 
-// Paystack webhook
+// ─── Paystack webhook ─────────────────────────────────────────────────────────
+
 router.post('/webhook', async (req, res) => {
-    try {
-        // Verify webhook signature
-        const hash = crypto
-            .createHmac('sha512', PAYSTACK_SECRET_KEY)
-            .update(JSON.stringify(req.body))
-            .digest('hex');
+  try {
+    const hash = crypto
+      .createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
 
-        if (hash !== req.headers['x-paystack-signature']) {
-            return res.status(401).json({ error: 'Invalid signature' });
-        }
-
-        const { event, data } = req.body;
-
-        if (event === 'charge.success') {
-            const payment = await Payment.findOne({
-                where: { reference: data.reference }
-            });
-
-            if (payment && payment.status !== 'success') {
-                await payment.update({
-                    status: 'success',
-                    paystackReference: data.reference,
-                    paymentMethod: data.channel,
-                    paidAt: new Date(data.paid_at),
-                    metadata: data
-                });
-
-                // Update laundry request
-                await LaundryRequest.update(
-                    { paymentStatus: 'paid' },
-                    { where: { id: payment.requestId } }
-                );
-
-                // Create notification
-                await Notification.create({
-                    userId: payment.userId,
-                    title: 'Payment Confirmed',
-                    message: `Your payment of ₦${payment.amount} has been confirmed.`,
-                    type: 'payment',
-                    metadata: { paymentId: payment.id }
-                });
-            }
-        }
-
-        res.sendStatus(200);
-    } catch (error) {
-        console.error('Webhook error:', error.message);
-        res.sendStatus(500);
+    if (hash !== req.headers['x-paystack-signature']) {
+      return res.status(401).json({ error: 'Invalid signature' });
     }
+
+    const { event, data } = req.body;
+
+    if (event === 'charge.success') {
+      const payment = await Payment.findOne({ where: { reference: data.reference } });
+
+      if (payment && payment.status !== 'success') {
+        await handlePaymentSuccess(payment, data);
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Webhook error:', error.message);
+    res.sendStatus(500);
+  }
 });
 
-// Get payment history
-router.get('/history', requireAuth, async (req, res) => {
-    try {
-        const payments = await Payment.findAll({
-            where: { userId: req.user.id },
-            order: [['createdAt', 'DESC']],
-            include: [{
-                model: LaundryRequest,
-                as: 'request',
-                attributes: ['id', 'status', 'pickupAddress']
-            }]
-        });
+// ─── Payment history ──────────────────────────────────────────────────────────
 
-        res.json(payments);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
+router.get('/history', requireAuth, async (req, res, next) => {
+  try {
+    const payments = await Payment.findAll({
+      where: { userId: req.user.id },
+      order: [['createdAt', 'DESC']],
+      include: [{
+        model: LaundryRequest,
+        as: 'request',
+        attributes: ['id', 'status', 'pickupAddress'],
+      }],
+    });
+
+    res.json(payments);
+  } catch (error) {
+    next(error);
+  }
 });
 
-// Get single payment
-router.get('/:id', requireAuth, async (req, res) => {
-    try {
-        const payment = await Payment.findOne({
-            where: { id: req.params.id, userId: req.user.id }
-        });
+// ─── Single payment ───────────────────────────────────────────────────────────
 
-        if (!payment) {
-            return res.status(404).json({ error: 'Payment not found' });
-        }
+router.get('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const payment = await Payment.findOne({
+      where: { id: req.params.id, userId: req.user.id },
+    });
 
-        res.json(payment);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
     }
+
+    res.json(payment);
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;

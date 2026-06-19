@@ -6,6 +6,8 @@ import { Server } from 'socket.io';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { auth } from './config/auth.js';
 import sequelize from './config/database.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { isValidTransition, allowedTransitions } from './constants/statusTransitions.js';
 
 // Import models
 import User from './models/User.js';
@@ -63,6 +65,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/notifications', notificationRoutes);
+
+// Centralized error handler — must be mounted after all routes
+app.use(errorHandler);
 
 // Model Associations
 User.hasMany(LaundryRequest, { as: 'customerRequests', foreignKey: 'customerId' });
@@ -133,14 +138,6 @@ io.on('connection', async (socket) => {
   socket.on('request:update', async (data) => {
     const { requestId, status } = data;
 
-    const validTransitions = {
-      accepted:        ['picked_up'],
-      picked_up:       ['washing'],
-      washing:         ['ready'],
-      ready:           ['out_for_delivery'],
-      out_for_delivery: ['delivered'],
-    };
-
     const request = await LaundryRequest.findByPk(requestId);
     if (!request) return;
 
@@ -150,11 +147,11 @@ io.on('connection', async (socket) => {
       return;
     }
 
-    const allowedNext = validTransitions[request.status];
-    if (!allowedNext || !allowedNext.includes(status)) {
+    if (!isValidTransition(request.status, status)) {
       socket.emit('request:error', {
         requestId,
-        error: `Cannot transition from '${request.status}' to '${status}'`
+        error: `Cannot transition from '${request.status}' to '${status}'`,
+        allowedTransitions: allowedTransitions(request.status),
       });
       return;
     }
